@@ -1,24 +1,27 @@
 ---
-- hosts: local
+# - name: call script that has the following section in another file
+#   import_playbook: ec2_groups.yml
+
+- hosts: localhost
   connection: local
   gather_facts: no
 
   tasks:
-    - name: get jumpbox instances' info
+    - name: get instances filtered on tags
       ec2_instance_facts:
         filters:
           "tag:Environment": Dev
           "tag:Platform": WJB
         validate_certs: no
-      register: wjb_dev_instances
+      register: filtered_instances
 
-    - name: add these jumpboxes to custom group
+    - name: add these instances to custom group
       add_host:
         name: "{{ item.private_ip_address }}"
-        groups: wjb
-      with_items: "{{ wjb_dev_instances.instances }}"
+        groups: a_group
+      with_items: "{{ filtered_instances.instances }}"
 
-- hosts: wjb
+- hosts: a_group
   remote_user: ec2-user
   become: yes
   gather_facts: no

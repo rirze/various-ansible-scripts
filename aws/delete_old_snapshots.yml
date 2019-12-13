@@ -1,0 +1,29 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: no
+
+  tasks:
+    - name: get all snapshots with specific tags
+      ec2_snapshot_info:
+        filters:
+          "tag:System": SystemName
+          "tag:Type":
+            - db
+            - app
+      register: snapshots
+
+    - name: get latest snapshot
+      set_fact:
+        latest_ts_raw: "{{ snapshots.snapshots | map(attribute='start_time') | max }}"
+        latest_ts_secs: "{{ ('2019-12-13T15:25:50.196000+00:00' | to_datetime('%Y-%m-%dT%H:%M:%S.%f%z')).total_seconds() }}"
+        adjusted_ts: "{{ '%Y-%m-%dT%H:%M:%S.%f%z' | strftime(int(latest_ts_secs) - 10 * 60) }}"
+
+
+    - name: delete all snapshots older than "{{ latest_ts }}"
+      ec2_snapshot:
+        snapshot_id: "{{ item.snapshot_id }}"
+        state: absent
+        wait: no
+      when: "{{ item.start_time < adjusted_ts }}"
+      with_items: "{{ snapshots.snapshots }}"
