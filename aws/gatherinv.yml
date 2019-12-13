@@ -1,0 +1,34 @@
+---
+- hosts: local
+  connection: local
+  gather_facts: no
+
+  tasks:
+    - name: get jumpbox instances' info
+      ec2_instance_facts:
+        filters:
+          "tag:Environment": Dev
+          "tag:Platform": WJB
+        validate_certs: no
+      register: wjb_dev_instances
+
+    - name: add these jumpboxes to custom group
+      add_host:
+        name: "{{ item.private_ip_address }}"
+        groups: wjb
+      with_items: "{{ wjb_dev_instances.instances }}"
+
+- hosts: wjb
+  remote_user: ec2-user
+  become: yes
+  gather_facts: no
+
+  pre_tasks:
+    - name: install python
+      raw: 'sudo yum install -y python2'
+
+  tasks:
+    - name: update all packages on yum
+      yum:
+        name: '*'
+        state: latest
