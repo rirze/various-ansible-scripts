@@ -3,6 +3,9 @@
   connection: local
   gather_facts: no
 
+  vars:
+    delete_after_time: "{{ 60 * 10 }}"
+
   tasks:
     - name: get all snapshots with specific tags
       ec2_snapshot_info:
@@ -13,17 +16,28 @@
             - app
       register: snapshots
 
-    - name: get latest snapshot
+    - name: get latest snapshot time
       set_fact:
-        latest_ts_raw: "{{ snapshots.snapshots | map(attribute='start_time') | max }}"
-        latest_ts_secs: "{{ ('2019-12-13T15:25:50.196000+00:00' | to_datetime('%Y-%m-%dT%H:%M:%S.%f%z')).total_seconds() }}"
-        adjusted_ts: "{{ '%Y-%m-%dT%H:%M:%S.%f%z' | strftime(int(latest_ts_secs) - 10 * 60) }}"
+        latest_ts_date: "{{ (snapshots.snapshots | map(attribute='start_time') | max | to_datetime('%Y-%m-%dT%H:%M:%S.%f%z')).timestamp() }}"
+
+    # - name: get latest timestamp in secs
+    #   set_fact:
+    #     latest_ts_secs: "{{ '%s' | strftime(latest_ts_date) }}"
+
+    - name: set time threshold int
+      set_fact:
+        adjusted_epoch: "{{ latest_ts_date | int - delete_after_secs | int }}"
+
+    - name: set time threshold str
+      set_fact:
+        adjusted_ts: "{{ (adjusted_epoch | to_datetime('%s')).isoformat()  }}"
 
 
     - name: delete all snapshots older than "{{ latest_ts }}"
-      ec2_snapshot:
-        snapshot_id: "{{ item.snapshot_id }}"
-        state: absent
-        wait: no
+      debug: #ec2_snapshot:
+        # snapshot_id: "{{ item.snapshot_id }}"
+        msg: "{{ item.snapshot_id }}"
+        # state: absent
+        # wait: no
       when: "{{ item.start_time < adjusted_ts }}"
       with_items: "{{ snapshots.snapshots }}"
