@@ -4,7 +4,7 @@
   gather_facts: no
 
   vars:
-    delete_after_time: "{{ 60 * 10 }}"
+    delete_after_time: "10 minutes"
 
   tasks:
     - name: get all snapshots with specific tags
@@ -18,26 +18,17 @@
 
     - name: get latest snapshot time
       set_fact:
-        latest_ts_date: "{{ (snapshots.snapshots | map(attribute='start_time') | max | to_datetime('%Y-%m-%dT%H:%M:%S.%f%z')).timestamp() }}"
+        latest_ts_date: "{{ snapshots.snapshots | map(attribute='start_time') | max }}"
 
-    # - name: get latest timestamp in secs
-    #   set_fact:
-    #     latest_ts_secs: "{{ '%s' | strftime(latest_ts_date) }}"
-
-    - name: set time threshold int
+    - name: subtract threshold and format into time
       set_fact:
-        adjusted_epoch: "{{ latest_ts_date | int - delete_after_secs | int }}"
-
-    - name: set time threshold str
-      set_fact:
-        adjusted_ts: "{{ (adjusted_epoch | to_datetime('%s')).isoformat()  }}"
+        adjusted_ts: "{{ lookup('pipe', \"date -u '+%Y-%m-%dT%H:%M:%S.%6N%:z' --date='\" + latest_ts_date + \" - \" + delete_after_time + \"' \")}}"
 
 
     - name: delete all snapshots older than "{{ latest_ts }}"
-      debug: #ec2_snapshot:
-        # snapshot_id: "{{ item.snapshot_id }}"
-        msg: "{{ item.snapshot_id }}"
-        # state: absent
-        # wait: no
-      when: "{{ item.start_time < adjusted_ts }}"
+      ec2_snapshot:
+        snapshot_id: "{{ item.snapshot_id }}"
+        state: absent
+        wait: no
+      when: item.start_time < adjusted_ts
       with_items: "{{ snapshots.snapshots }}"
