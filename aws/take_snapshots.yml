@@ -16,7 +16,7 @@
 
     - name: set date right now as variable
       set_fact:
-        date: "{{ '%b %d, %Y' | strftime }}"
+        date: "{{ '%b %d, %Y - %k:%M' | strftime }}"
 
     - name: take snapshots
       ec2_snapshot:
