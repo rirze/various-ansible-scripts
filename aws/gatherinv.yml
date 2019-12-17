@@ -1,25 +1,6 @@
 ---
-# - name: call script that has the following section in another file
-#   import_playbook: ec2_groups.yml
-
-- hosts: localhost
-  connection: local
-  gather_facts: no
-
-  tasks:
-    - name: get instances filtered on tags
-      ec2_instance_facts:
-        filters:
-          "tag:Environment": Dev
-          "tag:Platform": WJB
-        validate_certs: no
-      register: filtered_instances
-
-    - name: add these instances to custom group
-      add_host:
-        name: "{{ item.private_ip_address }}"
-        groups: a_group
-      with_items: "{{ filtered_instances.instances }}"
+- name: call script that imports the ec2 groups we are going to use
+  import_playbook: ec2_groups.yml
 
 - hosts: a_group
   remote_user: ec2-user
@@ -35,3 +16,4 @@
       yum:
         name: '*'
         state: latest
+        update_cache: yes
