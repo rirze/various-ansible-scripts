@@ -5,7 +5,7 @@
 
   tasks:
     - name: get volumes with specific tags
-      ec2_vol_info:
+      ec2_vol_facts:
         filters:
           "tag:System": SystemName
           "tag:Type":
@@ -23,10 +23,23 @@
         volume_id: "{{ item.id }}"
         description: "{{ item.tags.System + item.tags.Type }} - {{ item.attachment_set.device }} - {{ date }}"
         wait: no
+        region: us-east-1
         snapshot_tags:
           Name: "{{ item.tags.System + item.tags.Type }} - {{ item.attachment_set.device }} - {{ date }}"
           System: "{{ item.tags.System }}"
           Type: "{{ item.tags.Type }}"
           "Mount Point": "{{ item.attachment_set.device }}"
           instance_id: "{{ item.attachment_set.instance_id }}"
-      with_items: "{{ volumes.volumes }}"
+      loop: "{{ volumes.volumes }}"
+      register: _take_snapshots
+      async: 600
+      poll: 0
+
+    - name: wait for results to come in
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: _jobs
+      until: _jobs.finished
+      delay: 5
+      retries: 20
+      loop: "{{ _take_snapshots.results }}"
