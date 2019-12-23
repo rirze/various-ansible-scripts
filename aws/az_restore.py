@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 from collections import defaultdict
-from aws_cdk import aws_ec2 as cdk_ec2, core
+from aws_cdk import core
+from aws_cdk.aws_ec2 import CfnLaunchTemplate as LT, CfnInstance as Instance
 import boto3
 
 boto_ec2 = boto3.client('ec2')
@@ -8,8 +9,9 @@ boto_ec2 = boto3.client('ec2')
 filters = [
     {
         'Name': 'tag-key',
-        'Values': ['System', 'Type', 'DeviceName']
+        'Values': [tag]
     }
+    for tag in ['System', 'Type', 'DeviceName']
 ]
 
 
@@ -29,23 +31,36 @@ class LaunchTemplateStack(core.Stack):
         super().__init__(app, id)
 
         for (System, Type), volumes in mapping.items():
-            lc_d = cdk_ec2.CfnLaunchTemplate.LaunchTemplateDataProperty(
-                block_device_mappings=[cdk_ec2.CfnLaunchTemplate.BlockDeviceMappingProperty(
-                    device_name=tags['DeviceName'], ebs=cdk_ec2.CfnLaunchTemplate.EbsProperty(
-                        snapshot_id=tags['SnapshotId'])) for tags in volumes],
+            launch_template_data = LT.LaunchTemplateDataProperty(
+                block_device_mappings=[
+                    LT.BlockDeviceMappingProperty(device_name=tags['DeviceName'],
+                                                  ebs=LT.EbsProperty(snapshot_id=tags['SnapshotId']))
+                    for tags in volumes
+                ],
                 instance_type='dummy_instance_type',
-                tag_specifications=[cdk_ec2.CfnLaunchTemplate.TagSpecificationProperty(
-                    resource_type='instance',
-                    tags=[core.CfnTag(key="System", value=System),
-                          core.CfnTag(key="Type", value=Type)])])
+                tag_specifications=[
+                    LT.TagSpecificationProperty(resource_type='instance',
+                                                tags=[
+                                                    core.CfnTag(key="System", value=System),
+                                                    core.CfnTag(key="Type", value=Type)
+                                                ])
+                ])
 
-            lc = cdk_ec2.CfnLaunchTemplate(self, System + Type, launch_template_data=lc_d)
+            lt = LT(self, System + Type + 'LaunchTemplate',
+                    launch_template_data=launch_template_data,
+                    launch_template_name=System + Type + 'LaunchTemplate')
+
+            Instance(self, System + Type + 'Instance', launch_template=Instance.LaunchTemplateSpecificationProperty(version=lt.attr_latest_version_number, launch_template_id=lt.ref))
 
 
 if __name__ == '__main__':
-    raw_snapshots = boto_ec2.describe_snapshots(Filters=filters, OwnerIds=['self'])
+    # raw_snapshots = boto_ec2.describe_snapshots(Filters=filters, OwnerIds=['self'])
 
-    mapping = organize_snapshots(raw_snapshots['Snapshots'])
+    # mapping = organize_snapshots(raw_snapshots['Snapshots'])
+    mapping = {('System', 'Type'): [{'SnapshotId': '1',
+                                     'DeviceName': '\\'},
+                                    {'SnapshotId': '1',
+                                     'DeviceName': '\\sda\\xvd'}]}
 
     app = core.App(outdir='/home/chronos/ship')
     LaunchTemplateStack(app, "RestoredTheseLaunchTemplates", mapping)

@@ -20,11 +20,11 @@ filters = [
 
 def create_snapshots(instance):
     ec2.create_snapshots(Description=script_datetime,
-                             InstanceSpecification={
-                                 'InstanceId': instance,
-                                 'ExcludeBootVolume': False
-                             },
-                             CopyTagsFromSource='volume')
+                         InstanceSpecification={
+                             'InstanceId': instance,
+                             'ExcludeBootVolume': False
+                         },
+                         CopyTagsFromSource='volume')
 
 
 if __name__ == '__main__':
