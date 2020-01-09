@@ -12,34 +12,38 @@ filters = [
     },
     {
         'Name': 'tag:Type',
-        'Values': ['db', 'app']
-
+        'Values': ['test']
     }
 ]
 
 
-def create_snapshots(instance):
+def create_snapshots(instanceinfo):
     ec2.create_snapshots(Description=script_datetime,
                          InstanceSpecification={
-                             'InstanceId': instance,
-                             'ExcludeBootVolume': False
+                             'InstanceId': instanceinfo['InstanceId'],
                          },
-                         CopyTagsFromSource='volume')
+                         CopyTagsFromSource='volume',
+                         TagSpecifications=[
+                             {
+                                 'ResourceType': 'snapshot',
+                                 'Tags': [
+                                     {
+                                         'Key': 'InstanceType',
+                                         'Value': instanceinfo['InstanceType']
+                                     }
+                                 ]
+                             }
+                         ])
 
 
 if __name__ == '__main__':
     instances = ec2.describe_instances(Filters=filters)
 
-    volumes = []
     instance_list = []
     for reservation in instances['Reservations']:
         for instance in reservation['Instances']:
-            instance_list.append(instance['InstanceId'])
-            # tags = [d for d in instance['Tags'] if d['Key'] != 'Name']
-            # for volume in instance['BlockDeviceMappings']:
-            #     ebs = volume['Ebs']
-            #     volumes.append({'VolumeId': ebs['VolumeId'], 'Tags': tags +
-            #                     [{'Key': 'Mount Point', 'Value': volume['DeviceName']}]})
+            instance_list.append({'InstanceId': instance['InstanceId'],
+                                  'InstanceType': instance['InstanceType']})
 
     script_datetime = datetime.utcnow().ctime()  # 'Tue Dec 17 21:55:11 2019'
 
