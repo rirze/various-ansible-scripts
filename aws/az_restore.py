@@ -65,7 +65,7 @@ class LaunchTemplateStack(core.Stack):
                          launch_template_id=lt.ref))
 
 
-if __name__ == '__main__':
+def get_mapping():
     raw_snapshots = boto_ec2.describe_snapshots(Filters=filters, OwnerIds=['self'])
 
     mapping = organize_snapshots(raw_snapshots['Snapshots'])
@@ -73,6 +73,11 @@ if __name__ == '__main__':
     #                                                              'DeviceName': '/'},
     #                                                             {'SnapshotId': '2',
     #                                                              'DeviceName': '/sda/xvd'}]}
+
+    return mapping
+
+
+def create_cfn(mapping):
     app = core.App()
     stack = LaunchTemplateStack(app, "RestoredLaunchTemplates", mapping)
     directory = app.synth().directory
@@ -81,3 +86,8 @@ if __name__ == '__main__':
         yaml.dump(json.load(open(directory + "/RestoredLaunchTemplates" + '.template.json')), yfile)
 
     print("See 'RestoredLaunchTemplates.yml' for the template")
+
+
+if __name__ == '__main__':
+    mapping = get_mapping()
+    create_cfn(mapping)
