@@ -6,6 +6,8 @@ from time import time
 
 from multiprocessing import Barrier, Lock, Process
 
+from aws_helpers import aws_tags_to_dict, dict_to_aws_tags
+
 ec2 = boto3.client('ec2')
 
 filters = [
@@ -15,36 +17,39 @@ filters = [
     },
     {
         'Name': 'tag:Name',
-        'Values': ['MO-PRD sapqe4db']
+        'Values': ['MO-PRD sapqe4db', 'MO-PRD sapqe4ci']
     }
 ]
 
 
-def create_snapshot(volumeinfo, synchronizer, serializer):
-    synchronizer.wait()
-    start = time()
+def create_snapshot(volumeinfo, instance_info, synchronizer, serializer, script_datetime=datetime.utcnow().ctime()):
+    instance_id = volumeinfo['InstanceId']
+
+    tags = [
+        {
+            'Key': 'DeviceName',
+            'Value': volumeinfo['DeviceName']
+        },
+        {
+            'Key': 'InstanceId',
+            'Value': instance_id
+        },
+    ]
+
+    if volumeinfo['DeviceName'] == instance_info[instance_id]['RootDeviceName']:
+        tags.extend(dict_to_aws_tags(instance_info[instance_id]))
+
     session = boto3.session.Session()
     thread_ec2 = session.resource('ec2')
+
+    synchronizer.wait()
+    start = time()
     thread_ec2.create_snapshot(Description=script_datetime,
                                VolumeId=volumeinfo['VolumeId'],
                                TagSpecifications=[
                                    {
                                        'ResourceType': 'snapshot',
-                                       'Tags': [
-                                           {
-                                               'Key': 'InstanceType',
-                                               'Value': volumeinfo['InstanceType'],
-                                           },
-                                           {
-                                               'Key': 'DeviceName',
-                                               'Value': volumeinfo['DeviceName']
-                                           },
-                                           {
-                                               'Key': 'InstanceName',
-                                               'Value': volumeinfo['Name']
-
-                                           }
-                                       ]
+                                       'Tags': tags
                                    }
                                ])
 
@@ -53,64 +58,51 @@ def create_snapshot(volumeinfo, synchronizer, serializer):
         print(f"{start} \t {end}")
 
 
-def aws_tags_to_dict(tags_list):
-    tags_dict = {}
-    for tag in tags_list:
-        if 'key' in tag and not tag['key'].startswith('aws:'):
-            tags_dict[tag['key']] = tag['value']
-        elif 'Key' in tag and not tag['Key'].startswith('aws:'):
-            tags_dict[tag['Key']] = tag['Value']
-
-    return tags_dict
 
 
-def dict_to_aws_tags(tags_dict):
-    tags_list = []
-    for k, v in tags_dict.items():
-        tags_list.append({'Key': k, 'Value': v})
-
-    return tags_list
-
-
-if __name__ == '__main__':
+def take_snapshots():
     instances = ec2.describe_instances(Filters=filters)
 
-    instance_list = []
+    instance_info = {}
+    subnet_info = {}
     volumes = []
     for reservation in instances['Reservations']:
         for instance in reservation['Instances']:
 
             tags = aws_tags_to_dict(instance['Tags'])
-            # instance_list.append({'InstanceId': instance['InstanceId'],
-            #                       'Tags': instance['Tags'],
-            #                       'InstanceType': instance['InstanceType'],
-            #                       'Devices': [{'DeviceName': d['DeviceName'],
-            #                                    'VolumeId': d['Ebs']['VolumeId']} for d in instance['BlockDeviceMappings']]})
-            tags_to_add = {k: tags[k] for k in ('Name',)}
+            tags_to_add = {k: tags[k] for k in ('Name', 'Project') if k in tags}
+
             volumes.extend([{'DeviceName': d['DeviceName'],
                              'VolumeId': d['Ebs']['VolumeId'],
-                             'InstanceType': instance['InstanceType'],
-                             **tags_to_add
-                             } for d in instance['BlockDeviceMappings']])
+                             'InstanceId': instance['InstanceId']}
+                            for d in instance['BlockDeviceMappings']])
+
+            subnet_id = instance['SubnetId']
+            if subnet_id not in subnet_info:
+                subnet_query = ec2.describe_subnets(SubnetIds=[subnet_id])['Subnets'][0]
+                subnet_tags = aws_tags_to_dict(subnet_query['Tags'])
+
+                subnet_info[subnet_id] = subnet_tags['SubnetGroup']
+
+            instance_info[instance['InstanceId']] = {'InstanceType': instance['InstanceType'],
+                                                     'VpcId': instance['VpcId'],
+                                                     'SecurityGroupIds': ','.join(sg['GroupId'] for sg in instance['SecurityGroups']),
+                                                     'SubnetGroup': subnet_info[subnet_id],
+                                                     'IamInstanceProfileName': instance['IamInstanceProfile']['Arn'].split('/')[1],
+                                                     'RootDeviceName': instance['RootDeviceName'],
+                                                     'Architecture': instance['Architecture'],
+                                                     'VirtualizationType': instance['VirtualizationType'],
+                                                     **tags_to_add}
 
 
     script_datetime = datetime.utcnow().ctime()  # 'Tue Dec 17 21:55:11 2019'
 
-
-    # with cf.ProcessPoolExecutor() as executor:
-    #     [print(t) for t in executor.map(create_snapshot, volumes)]
-
     synchronizer = Barrier(len(volumes))
     serializer = Lock()
 
-    [Process(target=create_snapshot, args=(v, synchronizer, serializer)).start() for v in volumes]
-    # print(p)
-    # print('Process list created')
+    [Process(target=create_snapshot, args=(v, instance_info, synchronizer, serializer, script_datetime)).start()
+     for v in volumes]
 
-    # map(lambda x: x.start(), p)
-    # print('All Processes started')
 
-    # map(lambda x: x.join(), p)
-    # print('All Processes joined')
-
-    # [print(x) for x in map(lambda x: x.join(), p)]
+if __name__ == '__main__':
+    take_snapshots()
